@@ -1,3 +1,6 @@
 /data/
 /.vscode/
 /my_code/__pycache__/
+/log/
+/model_ABCParts/
+__pycache__/

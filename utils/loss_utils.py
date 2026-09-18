@@ -296,7 +296,9 @@ def compute_nnl_loss(pred, gt):
 
     type_loss = nn.NLLLoss()
     valid_class = (gt != -1)  # remove background
-    gt = gt[valid_class]
+    # NLLLoss uses class indices and requires an int64 target tensor.
+    # ABCDataset supplies these labels as int32 on some platforms.
+    gt = gt[valid_class].long()
 
     pred = pred[valid_class]
 

@@ -30,6 +30,12 @@ class ABCViewer:
         8: "Open B-spline related",
         9: "Closed B-spline related",
     }
+    _PARAMETER_SLICES = {
+        1: (4, 8),
+        3: (15, 22),
+        4: (8, 15),
+        5: (0, 4),
+    }
 
     def __init__(
         self,
@@ -41,6 +47,7 @@ class ABCViewer:
         normals,
         labels,
         prim,
+        t_param,
     ):
         self.point_cloud = point_cloud
         self.label_colors = self._validate_colors(label_colors, "label_colors")
@@ -50,6 +57,7 @@ class ABCViewer:
         self.normals = self._validate_point_attributes(normals, "normals", (3,))
         self.labels = self._validate_point_attributes(labels, "labels", ()).reshape(-1)
         self.prim = self._validate_point_attributes(prim, "prim", ()).reshape(-1)
+        self.t_param = self._validate_point_attributes(t_param, "T_param", (22,))
         self.pick_mode = False
         self.selected_point_index = None
 
@@ -237,15 +245,31 @@ class ABCViewer:
         surface_name = self._PRIMITIVE_NAMES.get(
             primitive_type, f"Unknown ({primitive_type})"
         )
+        parameter_text = self._format_primitive_parameters(point_index, primitive_type)
         self._highlight_selected_point(point_index)
         self.selection_info.text = (
             f"Index: {point_index}\n"
             f"XYZ: {point[0]:.5f}, {point[1]:.5f}, {point[2]:.5f}\n"
             f"Normal: {normal[0]:.5f}, {normal[1]:.5f}, {normal[2]:.5f}\n"
             f"Instance: {self.labels[point_index]}\n"
-            f"Surface: {surface_name} (prim {primitive_type})"
+            f"Surface: {surface_name} (prim {primitive_type})\n"
+            f"{parameter_text}"
         )
         self.window.post_redraw()
+
+    def _format_primitive_parameters(self, point_index, primitive_type):
+        parameter_slice = self._PARAMETER_SLICES.get(primitive_type)
+        if parameter_slice is None:
+            return "T_param: not available for B-spline-related surfaces."
+
+        start, stop = parameter_slice
+        values = np.array2string(
+            self.t_param[point_index, start:stop],
+            precision=5,
+            separator=", ",
+            max_line_width=32,
+        )
+        return f"T_param[{start}:{stop}]: {values}"
 
     def _highlight_selected_point(self, point_index):
         if self.selected_point_index is not None:
@@ -287,7 +311,7 @@ class ABCViewer:
 
     def on_layout(self, layout_context):
         rect = self.window.content_rect
-        panel_width = 260
+        panel_width = 340
         self.scene_widget.frame = gui.Rect(
             rect.x, rect.y, rect.width - panel_width, rect.height
         )

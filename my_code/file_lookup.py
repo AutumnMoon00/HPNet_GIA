@@ -17,7 +17,7 @@ DATASET_DIR = Path(r"C:\ABC_final")
 
 def load_part(filepath):
     """Load and validate the point-cloud arrays required by the viewer."""
-    required_keys = ("points", "normals", "labels", "prim")
+    required_keys = ("points", "normals", "labels", "prim", "T_param")
     with h5py.File(filepath, "r") as h5_file:
         missing_keys = [key for key in required_keys if key not in h5_file]
         if missing_keys:
@@ -30,6 +30,7 @@ def load_part(filepath):
 
         points = np.asarray(h5_file["points"][:], dtype=np.float64)
         normals = np.asarray(h5_file["normals"][:], dtype=np.float64)
+        t_param = np.asarray(h5_file["T_param"][:], dtype=np.float64)
         labels = np.asarray(h5_file["labels"][:]).reshape(-1)
         prim = np.asarray(h5_file["prim"][:]).reshape(-1)
 
@@ -44,7 +45,7 @@ def load_part(filepath):
             "labels and prim must contain one value per point "
             f"({len(points)}); got {len(labels)} and {len(prim)}."
         )
-    return points, normals, labels, prim
+    return points, normals, labels, prim, t_param
 
 
 def main():
@@ -54,7 +55,7 @@ def main():
 
     filepath = random.choice(files)
     print(f"Selected: {filepath.name}")
-    points, normals, labels, prim = load_part(filepath)
+    points, normals, labels, prim, t_param = load_part(filepath)
 
     print("\nNumber of points:", len(points))
     print("Primitive instances:", np.unique(labels))
@@ -87,6 +88,7 @@ def main():
         normals,
         labels,
         prim,
+        t_param,    
     )
     app.run()
 
