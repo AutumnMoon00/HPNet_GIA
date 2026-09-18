@@ -1,56 +1,95 @@
-import h5py
-import numpy as np
-import open3d as o3d
 import random
 from pathlib import Path
 
-# select a random file from the ABCParts dataset
-dir = Path("C:\\ABC_final")
-files = [f for f in dir.iterdir() if f.is_file()]
-filepath = random.choice(files)     # randomly select a file
-print(f"Selected: {filepath.name}")
+import h5py
+import numpy as np
+import open3d as o3d
+import open3d.visualization.gui as gui
 
-with h5py.File(filepath, "r") as f:
-    print("Keys:", list(f.keys()))
-    for key in f.keys():
-        data = f[key]
+if __package__:
+    from .ABCViewer import ABCViewer, categorical_colors
+else:
+    from ABCViewer import ABCViewer, categorical_colors
+
+
+DATASET_DIR = Path(r"C:\ABC_final")
+
+
+def load_part(filepath):
+    """Load and validate the point-cloud arrays required by the viewer."""
+    required_keys = ("points", "normals", "labels", "prim")
+    with h5py.File(filepath, "r") as h5_file:
+        missing_keys = [key for key in required_keys if key not in h5_file]
+        if missing_keys:
+            raise KeyError(f"{filepath} is missing dataset(s): {', '.join(missing_keys)}")
+
+        print("Keys:", list(h5_file.keys()))
+        for key in h5_file.keys():
+            data = h5_file[key]
+            print(f"{key:10s}", "shape =", data.shape, "dtype =", data.dtype)
+
+        points = np.asarray(h5_file["points"][:], dtype=np.float64)
+        normals = np.asarray(h5_file["normals"][:], dtype=np.float64)
+        labels = np.asarray(h5_file["labels"][:]).reshape(-1)
+        prim = np.asarray(h5_file["prim"][:]).reshape(-1)
+
+    if points.ndim != 2 or points.shape[1] != 3:
+        raise ValueError(f"points must have shape (N, 3), got {points.shape}.")
+    if normals.shape != points.shape:
+        raise ValueError(
+            f"normals must have shape {points.shape}, got {normals.shape}."
+        )
+    if len(labels) != len(points) or len(prim) != len(points):
+        raise ValueError(
+            "labels and prim must contain one value per point "
+            f"({len(points)}); got {len(labels)} and {len(prim)}."
+        )
+    return points, normals, labels, prim
+
+
+def main():
+    files = [path for path in DATASET_DIR.iterdir() if path.is_file()]
+    if not files:
+        raise FileNotFoundError(f"No files found in {DATASET_DIR}")
+
+    filepath = random.choice(files)
+    print(f"Selected: {filepath.name}")
+    points, normals, labels, prim = load_part(filepath)
+
+    print("\nNumber of points:", len(points))
+    print("Primitive instances:", np.unique(labels))
+    print("Number of instances:", len(np.unique(labels)))
+    print("Number of primitives:", len(np.unique(prim)))
+    for label in np.unique(labels):
+        mask = labels == label
         print(
-            f"{key:10s}",
-            "shape =", data.shape,
-            "dtype =", data.dtype
+            f"Instance {label}: {mask.sum()} points, "
+            f"primitive type = {np.unique(prim[mask])}"
         )
 
-    points = f["points"][:]
-    normals = f["normals"][:]
-    labels = f["labels"][:]
-    prim = f["prim"][:]
+    point_cloud = o3d.geometry.PointCloud()
+    point_cloud.points = o3d.utility.Vector3dVector(points)
+    point_cloud.normals = o3d.utility.Vector3dVector(normals)
 
-print()
-print("Number of points:", len(points))
-print("Primitive instances:", np.unique(labels))
-print("Number of instances:", len(np.unique(labels)))
-print("Number of primitives:", len(np.unique(prim)))
+    label_colors = categorical_colors(labels, seed=42)
+    prim_colors = categorical_colors(prim, seed=10)
+    normal_colors = np.clip((normals + 1.0) / 2.0, 0.0, 1.0)
+    point_cloud.colors = o3d.utility.Vector3dVector(label_colors)
+
+    app = gui.Application.instance
+    app.initialize()
+    viewer = ABCViewer(
+        point_cloud,
+        label_colors,
+        prim_colors,
+        normal_colors,
+        points,
+        normals,
+        labels,
+        prim,
+    )
+    app.run()
 
 
-
-# generate one deterministic color per instance
-rng = np.random.default_rng(42)
-
-unique_labels = np.unique(labels)
-
-color_table = {
-    label: rng.random(3)
-    for label in unique_labels
-}
-
-colors = np.array([
-    color_table[label]
-    for label in labels
-])
-
-pcd = o3d.geometry.PointCloud()
-
-pcd.points = o3d.utility.Vector3dVector(points)
-pcd.colors = o3d.utility.Vector3dVector(colors)
-
-o3d.visualization.draw_geometries([pcd])
+if __name__ == "__main__":
+    main()
