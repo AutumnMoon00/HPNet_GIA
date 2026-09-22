@@ -112,3 +112,5 @@ if __name__=='__main__':
     FLAGS = build_option()
     trainer = MyTrainer(FLAGS)
     trainer.train()
+
+# model_ABCParts\abc_normal
