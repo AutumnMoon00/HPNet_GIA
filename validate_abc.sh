@@ -9,7 +9,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH -c 16
 
-set -euo pipefail
+# set -eu pipefail
 
 CHECKPOINT_PATH="${1:-/home/wm-sharath/fib/HPNet_GIA/model_ABCParts/abc_normal/abc_normal}"
 DATA_PATH="${2:-/data/users/wm-sharath/fib/ABC_final/}"
@@ -18,8 +18,10 @@ DATA_PATH="${2:-/data/users/wm-sharath/fib/ABC_final/}"
 cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 
 # Initialize Conda in the batch shell and activate the project environment.
-# source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate hpnet_abc
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate hpnet_original
+
+# set -u
 
 srun python train.py \
     --eval \
