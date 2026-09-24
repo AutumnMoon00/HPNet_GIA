@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import trimesh
 from geomdl.tessellate import make_triangle_mesh
+import open3d
 from open3d import *
 from open3d import *
 from open3d import utility

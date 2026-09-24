@@ -5,7 +5,6 @@ import torch
 from torch import nn
 import torch.utils.data
 import matplotlib.pyplot as plt
-from utils.tf_visualizer import Visualizer as TfVisualizer
 from utils.main_utils import parameter_count, get_model_module
 from collections import defaultdict
 import time
@@ -26,9 +25,11 @@ class Trainer(object):
         self.build_dataloader()
         self.build_model_optimizer()
 
-        # TFBoard visualizer
-        self.TRAIN_VISUALIZER = TfVisualizer(self.LOG_DIR, 'train')
-        self.TEST_VISUALIZER = TfVisualizer(self.LOG_DIR, 'test')
+        # Evaluation only prints metrics, so it needs no TensorFlow logger.
+        if not self.opt.eval:
+            from utils.tf_visualizer import Visualizer as TfVisualizer
+            self.TRAIN_VISUALIZER = TfVisualizer(self.LOG_DIR, 'train')
+            self.TEST_VISUALIZER = TfVisualizer(self.LOG_DIR, 'test')
 
     def build_workspace(self):
 
@@ -45,6 +46,9 @@ class Trainer(object):
 
         if not os.path.exists(self.VIS_DIR):
             os.makedirs(self.VIS_DIR)
+
+        if self.opt.eval and self.opt.output_dir:
+            os.makedirs(self.opt.output_dir, exist_ok=True)
 
         DEFAULT_CHECKPOINT_PATH = os.path.join(self.LOG_DIR, 'checkpoint.tar')
         self.CHECKPOINT_PATH = self.opt.checkpoint_path if self.opt.checkpoint_path is not None \
@@ -64,18 +68,19 @@ class Trainer(object):
             print("Let's use %d GPUs!" % (torch.cuda.device_count()))
             self.model = nn.DataParallel(self.model)
 
-        if self.opt.optimizer.lower() == 'adam':
-            self.optimizer = torch.optim.Adam(
-                total_parameters,
-                lr=self.opt.learning_rate,
-                weight_decay=self.opt.weight_decay)
-        elif self.opt.optimizer.lower() == 'sgd':
-            self.optimizer = torch.optim.SGD(
-                total_parameters,
-                lr=self.opt.learning_rate,
-                momentum=self.opt.momentum,
-                nesterov=True,
-                weight_decay=self.opt.weight_decay)
+        if not self.opt.eval:
+            if self.opt.optimizer.lower() == 'adam':
+                self.optimizer = torch.optim.Adam(
+                    total_parameters,
+                    lr=self.opt.learning_rate,
+                    weight_decay=self.opt.weight_decay)
+            elif self.opt.optimizer.lower() == 'sgd':
+                self.optimizer = torch.optim.SGD(
+                    total_parameters,
+                    lr=self.opt.learning_rate,
+                    momentum=self.opt.momentum,
+                    nesterov=True,
+                    weight_decay=self.opt.weight_decay)
 
         self.BASE_LEARNING_RATE = self.opt.learning_rate
         self.BN_DECAY_STEP = self.opt.bn_decay_step
@@ -87,35 +92,37 @@ class Trainer(object):
         self.load_checkpoint()
         
     def load_checkpoint(self):
-        # Load checkpoint if any
         self.start_epoch = 0
-        if self.CHECKPOINT_PATH is not None and os.path.isfile(
-                self.CHECKPOINT_PATH) and not self.opt.not_load_model:
+        if self.opt.eval and not os.path.isfile(self.CHECKPOINT_PATH):
+            raise FileNotFoundError('Evaluation checkpoint not found: %s' % self.CHECKPOINT_PATH)
+        if os.path.isfile(self.CHECKPOINT_PATH) and not self.opt.not_load_model:
             print('load checkpoint path: %s' % self.CHECKPOINT_PATH)
-            checkpoint = torch.load(self.CHECKPOINT_PATH)
+            checkpoint = torch.load(self.CHECKPOINT_PATH, map_location='cpu', weights_only=False)
             pretrained_dict = checkpoint['model_state_dict']
-            model_dict = self.model.state_dict()
-            pretrained_dict = {
-                k: v
-                for k, v in pretrained_dict.items() if k in model_dict
-            }
-            model_dict.update(pretrained_dict)
-            self.model.load_state_dict(model_dict)
-            try:
-                self.optimizer.load_state_dict(
-                    checkpoint['optimizer_state_dict'])
-            except Exception as e:
-                print(e)
+            if self.opt.eval:
+                # Partial checkpoint loads would give misleading evaluation scores.
+                self.model.load_state_dict(pretrained_dict, strict=True)
+            else:
+                model_dict = self.model.state_dict()
+                pretrained_dict = {
+                    k: v for k, v in pretrained_dict.items() if k in model_dict
+                }
+                model_dict.update(pretrained_dict)
+                self.model.load_state_dict(model_dict)
+                try:
+                    self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                except Exception as e:
+                    print(e)
             self.start_epoch = checkpoint['epoch']
-            print("Successfully Load Model with %d epoch..." %
-                  self.start_epoch)
+            print("Successfully Load Model with %d epoch..." % self.start_epoch)
 
     def get_current_lr(self, epoch):
         lr = self.BASE_LEARNING_RATE
         for i, lr_decay_epoch in enumerate(self.LR_DECAY_STEPS):
             if epoch >= lr_decay_epoch:
                 lr *= self.LR_DECAY_RATE
-        self.TRAIN_VISUALIZER.log_scalars({'lr': lr}, self.epoch)
+        if not self.opt.eval:
+            self.TRAIN_VISUALIZER.log_scalars({'lr': lr}, self.epoch)
         return lr
 
     def adjust_learning_rate(self, optimizer, epoch):
@@ -137,17 +144,16 @@ class Trainer(object):
             from dataloader.ABCDataset import ABCDataset
             Dataset = ABCDataset
 
-        train_dataset = Dataset(DATA_PATH,
-                                TRAIN_DATASET,
-                                opt=self.opt,
-                                skip=self.opt.train_skip,
-                                fold=self.opt.train_fold)
         test_dataset = Dataset(DATA_PATH, TEST_DATASET, opt=self.opt, skip=self.opt.val_skip)
 
         num_workers = 0 if self.opt.debug else 4
 
-        self.train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=self.opt.batch_size, \
-                shuffle=True, num_workers=num_workers, worker_init_fn=my_worker_init_fn)
+        if not self.opt.eval:
+            train_dataset = Dataset(DATA_PATH, TRAIN_DATASET, opt=self.opt,
+                                    skip=self.opt.train_skip, fold=self.opt.train_fold)
+            self.train_dataloader = torch.utils.data.DataLoader(
+                train_dataset, batch_size=self.opt.batch_size, shuffle=True,
+                num_workers=num_workers, worker_init_fn=my_worker_init_fn)
 
         self.test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, \
                 shuffle=False, num_workers=num_workers, worker_init_fn=my_worker_init_fn)
@@ -223,8 +229,8 @@ class Trainer(object):
         cnt = 0
 
         for batch_idx, batch_data_label in enumerate(self.test_dataloader):
-            if batch_idx % 200 == 0:
-                print('Eval batch: %d' % (batch_idx))
+            if batch_idx % 10 == 0:
+                print('Eval batch: %d' % batch_idx, flush=True)
 
             for key in batch_data_label:
                 if not isinstance(batch_data_label[key], list):
@@ -247,16 +253,21 @@ class Trainer(object):
         print()
         # Log statistics
         BATCH_SIZE = self.test_dataloader.batch_size
-        self.TEST_VISUALIZER.log_scalars(
-            {key: stat_dict[key] / float(batch_idx + 1)
-             for key in stat_dict},
-            (self.epoch + 1) * len(self.test_dataloader) * BATCH_SIZE)
+        if not self.opt.eval:
+            self.TEST_VISUALIZER.log_scalars(
+                {key: stat_dict[key] / float(batch_idx + 1)
+                 for key in stat_dict},
+                (self.epoch + 1) * len(self.test_dataloader) * BATCH_SIZE)
         
         miou = stat_dict['miou'] / (float(batch_idx + 1))
         return miou
 
     def train(self):
-        
+        if self.opt.eval:
+            self.epoch = self.start_epoch
+            self.test_one_epoch()
+            return
+
         max_miou = 0
         for epoch in range(self.start_epoch, self.opt.max_epoch):
             self.epoch = epoch

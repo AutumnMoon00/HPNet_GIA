@@ -59,3 +59,45 @@ If you find this repository useful in your research, please cite:
   year={2021}
 }
 ```
+
+### ABCParts evaluation on L40S
+
+The original environment uses PyTorch 1.7 and CUDA 11.0. Use the L40S
+specific environment and the validation script in this branch:
+
+```bash
+conda env create -f environment-l40s.yml
+mkdir -p logs
+sbatch validate_abc.sh
+```
+
+The script defaults to the pretrained ABC checkpoint in
+`model_ABCParts/abc_normal/abc_normal`, the dataset at
+`/data/users/wm-sharath/fib/ABC_final/`, and a validation stride of 100.
+Each Slurm run writes one HDF5 file per evaluated shape to
+`outputs/<experiment-name>_<job-id>/`. The optional fourth argument sets the
+experiment name (default `abcparts_eval`). For a five-shape inspection run:
+
+```bash
+sbatch validate_abc.sh /path/to/checkpoint /path/to/ABC_final 1000 inspection
+```
+
+Each exported file contains the original `points`, `normals`, `labels`, `prim`,
+and `T_param` fields for the 7,000 selected points, plus `labels_pred` and
+`prim_pred`. The `source_index` field gives each selected point's row in the
+original 10,000-point HDF5 file. Instance IDs in `labels_pred` are arbitrary
+cluster IDs; validation compares them to `labels` after matching clusters.
+`prim_pred` uses the same class mapping as the validation metric.
+
+Pass a stride of 1 to evaluate the complete test split:
+
+```bash
+sbatch --time=24:00:00 validate_abc.sh /path/to/checkpoint /path/to/ABC_final 1
+```
+
+The full split is much slower than the default subset; the longer walltime overrides the script's four-hour default.
+
+Metrics are printed in `logs/hpnet_eval_<job-id>.out`. The open and closed
+spline checkpoints must be present in `log/pretrained_models/`. This branch
+uses SciPy for assignment and a CPU eigensolver for 3-by-3 PCA, so numerical
+scores may differ slightly from the original environment.

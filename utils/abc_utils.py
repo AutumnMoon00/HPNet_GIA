@@ -4,6 +4,7 @@ import numpy as np
 from pykdtree.kdtree import KDTree
 from utils.main_utils import npy, v
 from sklearn.cluster import MeanShift
+from functools import lru_cache
 from utils.spec_utils import *
 
 def map_type_gt(T_gt):
@@ -38,7 +39,7 @@ def initialize_open_spline_model(mode=0):
     control_decoder_ = DGCNNControlPoints(20, num_points=10, mode=mode)
     control_decoder = torch.nn.DataParallel(control_decoder_)
     control_decoder.load_state_dict(
-        torch.load(modelname)
+        torch.load(modelname, map_location='cpu', weights_only=False)
     )
 
     control_decoder_.cuda()
@@ -52,7 +53,7 @@ def initialize_closed_spline_model(mode=1):
     control_decoder_ = DGCNNControlPoints(20, num_points=10, mode=mode)
     control_decoder = torch.nn.DataParallel(control_decoder_)
     control_decoder.load_state_dict(
-        torch.load(modelname)
+        torch.load(modelname, map_location='cpu', weights_only=False)
     )
 
     control_decoder_.cuda()
@@ -63,8 +64,8 @@ def initialize_closed_spline_model(mode=1):
 def forward_pass_open_spline(
         input_points_, control_decoder, nu, nv, viz=False, weights=None, if_optimize=True
 ):
-    nu = nu.cuda(input_points_.get_device())
-    nv = nv.cuda(input_points_.get_device())
+    nu = nu.to(input_points_.device)
+    nv = nv.to(input_points_.device)
     with torch.no_grad():
         points_, scales, means, RS = standardize_points_torch(input_points_, weights)
 
@@ -87,16 +88,17 @@ def forward_pass_open_spline(
     for b in range(batch_size):
         # re-alinging back to original orientation for better comparison
         s = scales[b]
+        inverse_rotation = torch.linalg.inv(RS[b].cpu()).to(RS[b].device)
 
         temp = reconstructed_points[b].clone() * s.reshape((1, 3))
-        new_points = torch.inverse(RS[b]) @ torch.transpose(temp, 1, 0)
+        new_points = inverse_rotation @ torch.transpose(temp, 1, 0)
         temp = torch.transpose(new_points, 1, 0)
         temp = temp + means[b]
 
         out_recon_points.append(temp)
 
         temp = output[b] * s.reshape((1, 3))
-        temp = torch.inverse(RS[b]) @ torch.transpose(temp, 1, 0)
+        temp = inverse_rotation @ torch.transpose(temp, 1, 0)
         temp = torch.transpose(temp, 1, 0)
         temp = temp + means[b]
         new_outputs.append(temp)
@@ -115,8 +117,8 @@ def forward_pass_open_spline(
 
 def forward_closed_splines(input_points_, control_decoder, nu, nv, viz=False, weights=None, if_optimize=True):
     batch_size = input_points_.shape[0]
-    nu = nu.cuda(input_points_.get_device())
-    nv = nv.cuda(input_points_.get_device())
+    nu = nu.to(input_points_.device)
+    nv = nv.to(input_points_.device)
 
     with torch.no_grad():
         points_, scales, means, RS = standardize_points_torch(input_points_, weights)
@@ -138,8 +140,9 @@ def forward_closed_splines(input_points_, control_decoder, nu, nv, viz=False, we
 
     for b in range(batch_size):
         s = scales[b]
+        inverse_rotation = torch.linalg.inv(RS[b].cpu()).to(RS[b].device)
         temp = output[b] * s.reshape((1, 3))
-        temp = torch.inverse(RS[b]) @ torch.transpose(temp, 1, 0)
+        temp = inverse_rotation @ torch.transpose(temp, 1, 0)
         temp = torch.transpose(temp, 1, 0)
         temp = temp + means[b]
 
@@ -150,7 +153,7 @@ def forward_closed_splines(input_points_, control_decoder, nu, nv, viz=False, we
         temp = (
                 reconstructed_points[b].clone() * scales[b].reshape(1, 3)
         )
-        temp = torch.inverse(RS[b]) @ temp.T
+        temp = inverse_rotation @ temp.T
         temp = torch.transpose(temp, 1, 0) + means[b]
         temp = temp.reshape((30, 30, 3))
         temp = torch.cat([temp, temp[0:1]], 0)
@@ -196,6 +199,12 @@ class FittingModule:
         torch.cuda.empty_cache()
         return reconst_points
 
+@lru_cache(maxsize=1)
+def get_fitting_module():
+    # The pretrained spline networks are immutable during evaluation.
+    return FittingModule()
+
+
 def construction_affinity_matrix_type(inputs_xyz, type_per_point, T_param_pred, sigma=1.0):
 
     '''
@@ -216,7 +225,7 @@ def construction_affinity_matrix_type(inputs_xyz, type_per_point, T_param_pred, 
                 2:cp_distance.distance_from_bspline,
                 9:cp_distance.distance_from_bspline}
     
-    fitter = FittingModule()
+    fitter = get_fitting_module()
 
     param_list = {5:[0,4], 1:[4,8], 4:[8,15], 3:[15,22]}
     

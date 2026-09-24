@@ -1,0 +1,22 @@
+name: hpnet_l40s
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.10
+  - numpy=1.26
+  - pytorch::pytorch=2.3.1=py3.10_cuda12.1_cudnn8.9.2_0
+  - mkl<2024.1
+  - pytorch-cuda=12.1
+  - scipy=1.11
+  - scikit-learn=1.4
+  - h5py
+  - matplotlib
+  - trimesh
+  - transforms3d
+  - pip
+  - pip:
+      - geomdl==5.3.1
+      - open3d==0.18.0
+      - pykdtree

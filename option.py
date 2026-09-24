@@ -37,6 +37,9 @@ parser.add_argument('--MEAN_SHIFT_STEP',
 parser.add_argument('--log_dir',
                     default='./log/test',
                     help='Dump dir to save model checkpoint [default: log]')
+parser.add_argument('--output_dir',
+                    default=None,
+                    help='Directory for per-shape ABCParts HDF5 predictions during evaluation')
 
 # training parameters
 parser.add_argument('--max_epoch',

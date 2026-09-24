@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from src.approximation import fit_bezier_surface_fit_kronecker, BSpline, uniform_knot_bspline_
 from src.curve_utils import DrawSurfs
-from lapsolver import solve_dense
+from scipy.optimize import linear_sum_assignment as solve_dense
 
 draw_surf = DrawSurfs()
 EPS = np.finfo(np.float32).eps
@@ -148,8 +148,8 @@ def pca_torch(X):
     # TODO 2Change this to do SVD, because it is stable and computationally
     # less intensive.
     covariance = torch.transpose(X, 1, 0) @ X
-    S, U = torch.eig(covariance, eigenvectors=True)
-    return S, U
+    # The covariance is symmetric and only 3x3; solve it on CPU.
+    return torch.linalg.eigh(covariance.cpu())
 
 def rotation_matrix_a_to_b(A, B):
     """
@@ -196,14 +196,14 @@ def standardize_point_torch(point, weights):
 
     # take only very confident points to compute PCA direction.
     S, U = pca_torch(point[higher_indices])
-    smallest_ev = U[:, torch.min(S[:, 0], 0)[1]].data.cpu().numpy()
+    smallest_ev = U[:, 0].numpy()
 
     R = rotation_matrix_a_to_b(smallest_ev, np.array([1, 0, 0]))
 
     # axis aligns with x axis.
     R = R.astype(np.float32)
 
-    R = torch.from_numpy(R).cuda(point.get_device()).detach()
+    R = torch.from_numpy(R).to(point.device).detach()
 
     point = R @ torch.transpose(point, 1, 0)
     point = torch.transpose(point, 1, 0)

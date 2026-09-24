@@ -104,6 +104,22 @@ class MyTrainer(Trainer):
             loss_dict['miou'] = miou
             miou = compute_type_miou_abc(type_per_point, T_gt, cluster_pred, I_gt)
             loss_dict['type_miou'] = miou
+
+            if self.opt.eval and self.opt.output_dir:
+                from utils.eval_output import export_abc_prediction
+
+                prim_pred = type_per_point.argmax(dim=-1)[0].detach().cpu().numpy()
+                prim_pred[np.isin(prim_pred, [6, 7, 9])] = 0
+                prim_pred[prim_pred == 8] = 2
+                source_path = os.path.join(self.opt.data_path, obj_idx + '.h5')
+                output_path = os.path.join(
+                    self.opt.output_dir, os.path.basename(obj_idx) + '.h5'
+                )
+                export_abc_prediction(
+                    source_path, output_path,
+                    sub_idx[0].detach().cpu().numpy(),
+                    cluster_pred[0].detach().cpu().numpy(), prim_pred,
+                )
  
         return total_loss, loss_dict
         

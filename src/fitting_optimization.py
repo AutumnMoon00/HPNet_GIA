@@ -7,7 +7,7 @@ import numpy as np
 import open3d
 import scipy
 import torch
-from lapsolver import solve_dense
+from scipy.optimize import linear_sum_assignment as solve_dense
 from open3d import *
 
 from src.VisUtils import tessalate_points

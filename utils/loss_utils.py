@@ -7,7 +7,7 @@ from scipy.optimize import linear_sum_assignment
 from sklearn.cluster import KMeans
 from functools import wraps
 import time
-from lapsolver import solve_dense
+solve_dense = linear_sum_assignment
 DIVISION_EPS = 1e-10
 
 def timing(func):

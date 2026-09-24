@@ -11,7 +11,7 @@ import time
 from scipy.optimize import linear_sum_assignment
 import torch
 from torch.autograd import Variable
-from lapsolver import solve_dense
+solve_dense = linear_sum_assignment
 
 DIVISION_EPS = 1e-10
 
@@ -40,9 +40,9 @@ def timing(func):
 
 def v(var, cuda=True, volatile=False):
     if type(var) == torch.Tensor or type(var) == torch.DoubleTensor:
-        res = Variable(var.float(), volatile=volatile)
+        res = var.float()
     elif type(var) == np.ndarray:
-        res = Variable(torch.from_numpy(var), volatile=volatile)
+        res = torch.from_numpy(var)
     if cuda:
         res = res.cuda()
     return res

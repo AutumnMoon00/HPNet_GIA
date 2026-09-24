@@ -2,7 +2,7 @@ from open3d import *
 import numpy as np
 import torch
 from geomdl import fitting as geomdl_fitting
-from lapsolver import solve_dense
+from scipy.optimize import linear_sum_assignment as solve_dense
 from open3d import *
 from open3d import *
 

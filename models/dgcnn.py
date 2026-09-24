@@ -82,7 +82,7 @@ def get_graph_feature(x, k1=20, k2=20, idx=None):
     if idx is None:
         idx = knn(x, k1=k1, k2=k2)
 
-    device = torch.device('cuda')
+    device = x.device
 
     idx_base = torch.arange(0, batch_size, device=device).view(-1, 1, 1) * num_points
 
@@ -119,7 +119,7 @@ def get_graph_feature_with_normals(x, k1=20, k2=20, idx=None):
     if idx is None:
         idx = knn_points_normals(x, k1=k1, k2=k2)
 
-    device = torch.device('cuda')
+    device = x.device
 
     idx_base = torch.arange(0, batch_size, device=device).view(-1, 1, 1) * num_points
 

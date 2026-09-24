@@ -6,7 +6,6 @@ import numpy as np
 from geomdl import BSpline, NURBS
 from geomdl import fitting
 from geomdl import multi
-from geomdl.visualization import VisMPL
 from matplotlib import cm
 
 
@@ -181,14 +180,17 @@ class DrawSurfs:
         return surf.evalpts
 
     def vis_spline_curve(self, crv):
+        from geomdl.visualization import VisMPL
         crv.vis = VisMPL.VisCurve3D()
         crv.render()
 
     def vis_spline_surf(self, surf):
+        from geomdl.visualization import VisMPL
         surf.vis = VisMPL.VisSurface()
         surf.render()
 
     def vis_multiple_spline_surf(self, surfs):
+        from geomdl.visualization import VisMPL
         mcrv = multi.SurfaceContainer([surf, surf1])
         mcrv.vis = VisMPL.VisSurface()
         mcrv.render()
