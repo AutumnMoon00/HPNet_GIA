@@ -1,4 +1,7 @@
 import random
+import subprocess
+import sys
+import threading
 import traceback
 from pathlib import Path
 
@@ -127,29 +130,45 @@ def main():
         open_model(random.choice(files))
 
     def choose_file():
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
+        file_button.enabled = False
+        status_label.text = "Opening file explorer..."
+        chooser.set_needs_layout()
 
-            root = tk.Tk()
-            root.withdraw()
-            root.attributes("-topmost", True)
+        def run_file_picker():
             try:
-                path = filedialog.askopenfilename(
-                    parent=root,
-                    title="Select an H5 model",
-                    initialdir=str(DATASET_DIR),
-                    filetypes=[("H5 files", "*.h5 *.hdf5")],
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(Path(__file__).with_name("native_file_picker.py")),
+                        str(DATASET_DIR),
+                    ],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 )
-            finally:
-                root.destroy()
-        except Exception as error:
-            status_label.text = f"Could not open file explorer: {error}"
-            chooser.post_redraw()
-            return
+                path = result.stdout.decode("utf-8", errors="replace")
+                error = result.stderr.decode("utf-8", errors="replace")
+                failed = result.returncode != 0
+            except Exception as exception:
+                path = ""
+                error = str(exception)
+                failed = True
 
-        if path:
-            open_model(Path(path))
+            def finish_selection():
+                file_button.enabled = True
+                if failed:
+                    status_label.text = f"Could not open file explorer: {error}"
+                    chooser.set_needs_layout()
+                elif path:
+                    status_label.text = ""
+                    open_model(Path(path))
+                else:
+                    status_label.text = ""
+                    chooser.set_needs_layout()
+
+            app.post_to_main_thread(chooser, finish_selection)
+
+        threading.Thread(target=run_file_picker, daemon=True).start()
 
     random_button = gui.Button("Choose random")
     file_button = gui.Button("Select a file")
