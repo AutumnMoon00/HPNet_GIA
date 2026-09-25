@@ -19,16 +19,16 @@ class ABCViewer:
     _GEOMETRY_NAME = "pointcloud"
     _SELECTION_GEOMETRY_NAME = "selected_point"
     _PRIMITIVE_NAMES = {
-        0: "Closed B-spline related",
+        0: "Closed B-spline",
         1: "Plane",
-        2: "Open B-spline related",
+        2: "Open B-spline",
         3: "Cone",
         4: "Cylinder",
         5: "Sphere",
-        6: "Closed B-spline related",
-        7: "Closed B-spline related",
-        8: "Open B-spline related",
-        9: "Closed B-spline related",
+        6: "Closed B-spline",
+        7: "Closed B-spline",
+        8: "Open B-spline",
+        9: "Closed B-spline",
     }
     _PARAMETER_SLICES = {
         1: (4, 8),
@@ -48,6 +48,8 @@ class ABCViewer:
         labels,
         prim,
         t_param,
+        model_name="",
+        window=None,
     ):
         self.point_cloud = point_cloud
         self.label_colors = self._validate_colors(label_colors, "label_colors")
@@ -58,40 +60,50 @@ class ABCViewer:
         self.labels = self._validate_point_attributes(labels, "labels", ()).reshape(-1)
         self.prim = self._validate_point_attributes(prim, "prim", ()).reshape(-1)
         self.t_param = self._validate_point_attributes(t_param, "T_param", (22,))
+        self.model_name = model_name
         self.pick_mode = False
         self.selected_point_index = None
-
-        self.window = gui.Application.instance.create_window(
-            "ABCParts Viewer", 1200, 800
-        )
         self.scene_widget = gui.SceneWidget()
+        if not hasattr(self.scene_widget, "set_on_mouse"):
+            raise RuntimeError(
+                f"Open3D {o3d.__version__} does not support mouse point picking. "
+                "Install Open3D 0.12.0 or newer."
+            )
+
+        self.window = window
+        self.owns_window = window is None
+        try:
+            self._build_window()
+        except Exception:
+            if self.owns_window and self.window is not None:
+                self.window.close()
+            raise
+
+    def _build_window(self):
+        if self.window is None:
+            self.window = gui.Application.instance.create_window(
+                "ABCParts Viewer", 1200, 800
+            )
         self.scene_widget.scene = rendering.Open3DScene(self.window.renderer)
         self.scene_widget.set_view_controls(gui.SceneWidget.Controls.ROTATE_CAMERA)
-        render_scene = getattr(self.scene_widget.scene, "scene", None)
-        self.mouse_picking_supported = (
-            hasattr(self.scene_widget, "set_on_mouse")
-            and render_scene is not None
-            and hasattr(render_scene, "render_to_depth_image")
-            and hasattr(self.scene_widget.scene, "camera")
-        )
-        if self.mouse_picking_supported:
-            self.scene_widget.set_on_mouse(self.on_mouse)
+        self.scene_widget.set_on_mouse(self.on_mouse)
 
         self.material = self._create_point_material()
         self.selection_material = self._create_point_material()
-        self.selection_material.point_size = 12.0
+        self.selection_material.point_size = 18.0
         self.scene_widget.scene.add_geometry(
             self._GEOMETRY_NAME, self.point_cloud, self.material
         )
 
-        bounds = self.point_cloud.get_axis_aligned_bounding_box()
-        self.scene_widget.setup_camera(60, bounds, bounds.get_center())
+        self.bounds = self.point_cloud.get_axis_aligned_bounding_box()
+        self.camera_initialized = False
 
         em = self.window.theme.font_size
         self.panel = gui.Vert(
             0.5 * em, gui.Margins(0.5 * em, 0.5 * em, 0.5 * em, 0.5 * em)
         )
         self.panel.add_child(gui.Label("Color by"))
+        self.panel.add_child(gui.Label(self._format_model_statistics()))
 
         self.label_button = gui.Button("Labels")
         self.prim_button = gui.Button("Primitive Type")
@@ -105,35 +117,41 @@ class ABCViewer:
         self.point_size_slider.int_value = int(self.material.point_size)
         self.panel.add_child(self.point_size_slider)
 
-        if self.mouse_picking_supported:
-            self.pick_button = gui.Button("Pick point")
-            self.panel.add_child(self.pick_button)
-            self.selection_info = gui.Label(
-                "Select 'Pick point', then click a visible point."
-            )
-        else:
-            self.panel.add_child(gui.Label("Point index"))
-            self.point_index_slider = gui.Slider(gui.Slider.INT)
-            self.point_index_slider.set_limits(0, len(self.points) - 1)
-            self.point_index_slider.int_value = 0
-            self.panel.add_child(self.point_index_slider)
-            self.selection_info = gui.Label(
-                "Use the point-index slider to inspect a point."
-            )
+        self.pick_button = gui.Button("Pick point")
+        self.panel.add_child(self.pick_button)
+        self.pick_hint = gui.Label("Click 'Pick point', then click a visible point.")
+        self.panel.add_child(self.pick_hint)
+        self.selection_info = gui.Label("No point selected.")
         self.panel.add_child(self.selection_info)
 
         self.label_button.set_on_clicked(self.show_labels)
         self.prim_button.set_on_clicked(self.show_prim)
         self.normal_button.set_on_clicked(self.show_normals)
         self.point_size_slider.set_on_value_changed(self.set_point_size)
-        if self.mouse_picking_supported:
-            self.pick_button.set_on_clicked(self.toggle_pick_mode)
-        else:
-            self.point_index_slider.set_on_value_changed(self.show_point_by_index)
+        self.pick_button.set_on_clicked(self.toggle_pick_mode)
 
         self.window.add_child(self.scene_widget)
         self.window.add_child(self.panel)
         self.window.set_on_layout(self.on_layout)
+        self.window.set_needs_layout()
+        self.window.post_redraw()
+
+    def _format_model_statistics(self):
+        primitive_types, point_counts = np.unique(self.prim, return_counts=True)
+        lines = [
+            f"Model: {self.model_name}" if self.model_name else "Model statistics",
+            f"Points: {len(self.points):,}",
+            f"Primitive instances: {len(np.unique(self.labels)):,}",
+            f"Primitive types: {len(primitive_types)}",
+            "Points by type:",
+        ]
+        for primitive_type, count in zip(primitive_types, point_counts):
+            primitive_type = int(primitive_type)
+            name = self._PRIMITIVE_NAMES.get(
+                primitive_type, f"Unknown ({primitive_type})"
+            )
+            lines.append(f"  {primitive_type}: {name} ({count:,} points)")
+        return "\n".join(lines)
 
     def _validate_colors(self, colors, name):
         colors = np.asarray(colors, dtype=np.float64)
@@ -175,23 +193,19 @@ class ABCViewer:
 
     def set_point_size(self, size):
         self.material.point_size = float(size)
-        self.selection_material.point_size = max(12.0, 2.0 * float(size))
+        self.selection_material.point_size = max(18.0, 2.0 * float(size))
         self._refresh_geometry()
         if self.selected_point_index is not None:
             self._refresh_selected_point()
-
-    def show_point_by_index(self, point_index):
-        self._show_selected_point(int(point_index))
 
     def toggle_pick_mode(self):
         self.pick_mode = not self.pick_mode
         if self.pick_mode:
             self.pick_button.text = "Stop picking"
-            self.selection_info.text = "Click a visible point to inspect it."
-            self.scene_widget.set_view_controls(gui.SceneWidget.Controls.PICK_POINTS)
+            self.pick_hint.text = "Click a visible point to inspect it."
         else:
             self.pick_button.text = "Pick point"
-            self.scene_widget.set_view_controls(gui.SceneWidget.Controls.ROTATE_CAMERA)
+            self.pick_hint.text = "Click 'Pick point' to inspect another point."
 
     def on_mouse(self, event):
         if (
@@ -207,12 +221,48 @@ class ABCViewer:
         if not (0 <= click_x < frame.width and 0 <= click_y < frame.height):
             return gui.SceneWidget.EventCallbackResult.IGNORED
 
-        self.scene_widget.scene.scene.render_to_depth_image(
-            lambda depth_image: self._select_depth_pixel(
-                depth_image, click_x, click_y, frame.width, frame.height
+        render_scene = getattr(self.scene_widget.scene, "scene", None)
+        if render_scene is not None and hasattr(render_scene, "render_to_depth_image"):
+            render_scene.render_to_depth_image(
+                lambda depth_image: self._select_depth_pixel(
+                    depth_image, click_x, click_y, frame.width, frame.height
+                )
             )
-        )
+        else:
+            self._select_projected_point(click_x, click_y, frame.width, frame.height)
         return gui.SceneWidget.EventCallbackResult.HANDLED
+
+    def _scene_camera(self):
+        scene = self.scene_widget.scene
+        if hasattr(scene, "camera"):
+            return scene.camera
+        return scene.view.get_camera()
+
+    def _select_projected_point(self, click_x, click_y, width, height):
+        """Pick the nearest projected point on older Open3D versions."""
+        camera = self._scene_camera()
+        positions = np.column_stack((self.points, np.ones(len(self.points))))
+        clip = positions @ (
+            np.asarray(camera.get_projection_matrix())
+            @ np.asarray(camera.get_view_matrix())
+        ).T
+        in_front = clip[:, 3] > 0
+        ndc = clip[in_front, :3] / clip[in_front, 3][:, None]
+        candidates = np.flatnonzero(in_front)
+        visible = (
+            (np.abs(ndc[:, 0]) <= 1)
+            & (np.abs(ndc[:, 1]) <= 1)
+            & (np.abs(ndc[:, 2]) <= 1)
+        )
+        ndc = ndc[visible]
+        candidates = candidates[visible]
+        screen_x = (ndc[:, 0] + 1) * width / 2
+        screen_y = (1 - ndc[:, 1]) * height / 2
+        distance_sq = (screen_x - click_x) ** 2 + (screen_y - click_y) ** 2
+        if not len(distance_sq) or distance_sq.min() > max(8, self.material.point_size) ** 2:
+            self._show_selection_message("No point at that location.")
+            return
+        self._show_selected_point(int(candidates[np.argmin(distance_sq)]))
 
     def _select_depth_pixel(self, depth_image, click_x, click_y, view_width, view_height):
         depth = np.asarray(depth_image)
@@ -226,7 +276,7 @@ class ABCViewer:
             )
             return
 
-        world_point = self.scene_widget.scene.camera.unproject(
+        world_point = self._scene_camera().unproject(
             pixel_x, pixel_y, z, width, height
         )
         point_index = int(np.argmin(np.sum((self.points - world_point) ** 2, axis=1)))
@@ -260,7 +310,13 @@ class ABCViewer:
     def _format_primitive_parameters(self, point_index, primitive_type):
         parameter_slice = self._PARAMETER_SLICES.get(primitive_type)
         if parameter_slice is None:
-            return "T_param: not available for B-spline-related surfaces."
+            values = np.array2string(
+                self.t_param[point_index],
+                precision=5,
+                separator=", ",
+                max_line_width=70,
+            )
+            return f"T_param (full row): {values}"
 
         start, stop = parameter_slice
         values = np.array2string(
@@ -318,3 +374,13 @@ class ABCViewer:
         self.panel.frame = gui.Rect(
             rect.get_right() - panel_width, rect.y, panel_width, rect.height
         )
+        if (
+            not self.camera_initialized
+            and self.scene_widget.frame.width > 0
+            and self.scene_widget.frame.height > 0
+        ):
+            self.camera_initialized = True
+            self.scene_widget.setup_camera(
+                60, self.bounds, self.bounds.get_center()
+            )
+            self.window.post_redraw()
