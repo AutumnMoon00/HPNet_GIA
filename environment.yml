@@ -23,7 +23,7 @@ dependencies:
     - torch_scatter==2.0.6
     - lapsolver==1.1.0
     - pytorch_utils==0.5.5
-    - open3d==0.12.0
+    - open3d==0.13.0
     - ipdb==0.12.3
     - lap==0.4.0
     - scikit-learn==0.24.2
