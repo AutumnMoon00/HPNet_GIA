@@ -7,3 +7,5 @@ __pycache__/
 /outputs/
 /bridge_data_with_primitives/
 /logs/
+output/
+batch_logs/
