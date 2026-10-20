@@ -3,7 +3,9 @@
 Run from the project directory in hpnet_ifb:
     python ABC_superpoints_code/abc_superpoints_batch.py --workers 8
 
-Input/output defaults are inherited from abc_superpoints_singlefile.py.
+Input defaults are inherited from abc_superpoints_singlefile.py. Outputs go to
+/data/users/wm-sharath/fib/ABC_final_geon_superpoints/ and
+/data/users/wm-sharath/fib/ABC_final_abc_superpoints/ by default.
 Normals and segmentation defaults match that script. Each process uses one
 native thread, while files are processed in parallel. Both existing outputs
 are skipped unless --overwrite is supplied. A partial output pair is rebuilt.
@@ -90,8 +92,10 @@ def parse_args() -> argparse.Namespace:
     import abc_superpoints_singlefile as singlefile
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--input-dir", type=Path, default=singlefile.DEFAULT_INPUT_DIR)
-    parser.add_argument("--geon-output-dir", type=Path, default=singlefile.DEFAULT_GEON_OUTPUT_DIR)
-    parser.add_argument("--abc-output-dir", type=Path, default=singlefile.DEFAULT_ABC_OUTPUT_DIR)
+    parser.add_argument("--geon-output-dir", type=Path,
+                        default=Path("/data/users/wm-sharath/fib/ABC_final_geon_superpoints/"))
+    parser.add_argument("--abc-output-dir", type=Path,
+                        default=Path("/data/users/wm-sharath/fib/ABC_final_abc_superpoints/"))
     parser.add_argument("--workers", type=int, default=min(8, max(1, (os.cpu_count() or 2) - 1)),
                         help="Number of worker processes (default: up to 8)")
     parser.add_argument("--limit", type=int, help="Process only the first N sorted input files")

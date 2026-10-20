@@ -195,7 +195,7 @@ class DGCNNEncoderGn(nn.Module):
             x = self.conv3(x)
             x3 = x.max(dim=-1, keepdim=False)[0]
 
-            x_features = torch.cat((x1, x2, x3), dim=1)
+            x_features = torch.cat((x1, x2, x3), dim=1)         # Point-wise features, with 256 dimensions
             x = F.relu(self.bnmlp1(self.mlp1(x_features)))
 
             x4 = x.max(dim=2)[0]
@@ -218,9 +218,9 @@ class DGCNNEncoderGn(nn.Module):
             x = self.conv3(x)
             x3 = x.max(dim=-1, keepdim=False)[0]
 
-            x_features = torch.cat((x1, x2, x3), dim=1)
+            x_features = torch.cat((x1, x2, x3), dim=1)         # Point-wise features, with 256 dimensions
             x = F.relu(self.bnmlp1(self.mlp1(x_features)))
-            x4 = x.max(dim=2)[0]
+            x4 = x.max(dim=2)[0]                                # Global features, with 1024 dimensions
 
             return x4, x_features
 
