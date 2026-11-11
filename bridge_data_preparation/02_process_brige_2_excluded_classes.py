@@ -12,7 +12,7 @@ from geon.algorithms.superpoints import segment_superpoints
 
 
 DATASET_DIR = Path(
-    r"C:\Users\Madanu.S\Downloads\01-BridgePatchDataset.geon\01-BridgePatchDataset.geon"
+    r"/data/users/wm-sharath/fib/01-BridgePatchDataset.geon/"
 )
 INPUT_DIR = DATASET_DIR / "org_copy"
 OUTPUT_DIR = DATASET_DIR / "org_copy_superpoints"
